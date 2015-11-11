@@ -8,36 +8,33 @@ class Skynet
     @access_token = access_token
   end
 
-  def write(content, path, msg="Committed via Skynet @ #{Time.now.strftime('%e %b %Y %H:%M:%S')}")
+  def write(content:, path:, msg: "Committed via Skynet @ #{Time.now.strftime('%e %b %Y %H:%M:%S')}")
     raise ArgumentError.new('Path must be valid filename') unless path.size > 0
-    blob_sha = github.create_blob(@repo, Base64.encode64(content), 'base64')
+    file = get(path)
+    options = { sha: file.sha } unless file.nil?
 
-    new_tree = github.create_tree(@repo,[{
-        path: path,
-        mode: '100644',
-        type: 'blob',
-        sha: blob_sha
-      }], {
-      base_tree: base_tree.sha
-    })
+    github.create_content(@repo, path, msg, content, options)
+  end
 
-    new_commit = github.create_commit(@repo, msg, new_tree.sha, latest_commit.sha)
-    bust_cache
-    github.update_ref(@repo, REF, new_commit.sha)
+  def delete(path:, msg: "Committed via Skynet @ #{Time.now.strftime('%e %b %Y %H:%M:%S')}")
+    raise ArgumentError.new('Path must be valid filename') unless path.size > 0
+
+    file = get(path)
+    if file.nil?
+      raise ArgumentError.new('File does not exist!')
+    else
+      github.delete_contents(@repo, path, msg, file.sha)
+    end
   end
 
   private
 
-  def latest_commit
-    @latest_commit ||= github.ref(@repo, REF).object
-  end
-
-  def base_tree
-    @base_tree ||= github.commit(@repo, latest_commit.sha).commit.tree
-  end
-
-  def bust_cache
-    @base_tree = @latest_commit = nil
+  def get(path)
+    begin
+      github.contents(@repo, path: path)
+    rescue Octokit::NotFound => e
+      puts "#{path} does not exist"
+    end
   end
 
   def github
